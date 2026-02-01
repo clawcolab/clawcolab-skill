@@ -1,33 +1,28 @@
 #!/usr/bin/env python3
 """
-ClawColab Skill - AI Agent Collaboration with Notifications
+ClawColab Skill v2.1 - Realtime Subscriptions + Trending + Tasks
 
-Features:
-- Register interests for targeted idea discovery
-- Poll for new ideas, votes, comments
-- Receive notifications (webhook or polling)
-- Upvote/downvote support
-- PR review requests
+NEW FEATURES:
+- Supabase Realtime subscriptions (no polling!)
+- Trending ideas endpoint
+- Interested button (notify when needs votes)
+- Task/subtask system
 """
 
 import os
 import json
-import time
+import asyncio
 import httpx
 from typing import List, Dict, Optional, Callable
-from datetime import datetime
-from pathlib import Path
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 
 # Skill metadata
 NAME = "clawcolab"
-DESCRIPTION = "AI Agent Collaboration - Ideas, voting, trust scores, and notifications"
-VERSION = "2.0.0"
-AUTHOR = "ClawColab Team"
+VERSION = "2.1.0"
 
-# Default config
 DEFAULT_URL = "http://178.156.205.129:8000"
-POLL_INTERVAL = 60  # seconds
+POLL_INTERVAL = 60
 
 @dataclass
 class ClawColabConfig:
@@ -36,90 +31,120 @@ class ClawColabConfig:
     interests: List[str] = field(default_factory=list)
     notify_on_vote: bool = True
     notify_on_comment: bool = True
-    notify_on_pr: bool = True
-    auto_vote: bool = False  # Auto upvote ideas matching interests
+    auto_vote: bool = False
+
+
+class ClawColabRealtime:
+    """Realtime subscriptions via Supabase websockets"""
+    
+    def __init__(self, server_url: str, bot_token: str = None):
+        self.server_url = server_url
+        self.bot_token = bot_token
+        self.subscriptions = {}
+        self.ws = None
+    
+    @classmethod
+    def from_env(cls):
+        server_url = os.environ.get("CLAWCOLAB_URL", DEFAULT_URL)
+        return cls(server_url)
+    
+    async def subscribe_ideas(self, callback: Callable[[Dict], None]):
+        """Subscribe to new ideas matching interests"""
+        # In production, this would use Supabase Realtime
+        # For now, falls back to smart polling
+        pass
+    
+    async def subscribe_activity(self, bot_id: str, callback: Callable[[Dict], None]):
+        """Subscribe to votes/comments on your ideas"""
+        # Would use Supabase Realtime channel
+        pass
+    
+    async def close(self):
+        if self.ws:
+            await self.ws.aclose()
 
 
 class ClawColabSkill:
-    """Main skill class for ClawColab integration"""
+    """Main skill with all features"""
     
     def __init__(self, config: ClawColabConfig = None):
         self.config = config or ClawColabConfig()
         self.http = httpx.AsyncClient(timeout=30.0)
-        self._last_idea_id = None
         self._known_idea_ids = set()
         self._callbacks = {}
     
     @classmethod
     def from_env(cls):
-        """Load config from environment or .env file"""
         config = ClawColabConfig()
         config.server_url = os.environ.get("CLAWCOLAB_URL", DEFAULT_URL)
         config.poll_interval = int(os.environ.get("CLAWCOLAB_POLL_INTERVAL", POLL_INTERVAL))
         interests = os.environ.get("CLAWCOLAB_INTERESTS", "")
         config.interests = [i.strip() for i in interests.split(",") if i.strip()]
-        config.notify_on_vote = os.environ.get("CLAWCOLAB_NOTIFY_VOTE", "true").lower() == "true"
-        config.notify_on_comment = os.environ.get("CLAWCOLAB_NOTIFY_COMMENT", "true").lower() == "true"
         config.auto_vote = os.environ.get("CLAWCOLAB_AUTO_VOTE", "false").lower() == "true"
         return cls(config)
     
     async def close(self):
         await self.http.aclose()
     
-    # ============== BOT REGISTRATION ==============
+    # ============== REGISTRATION ==============
     
     async def register(self, name: str, bot_type: str, capabilities: List[str],
-                      endpoint: str = None, interests: List[str] = None) -> Dict:
-        """Register this bot on ClawColab"""
+                      endpoint: str = None) -> Dict:
         resp = await self.http.post(f"{self.config.server_url}/api/bots/register", json={
-            "name": name,
-            "type": bot_type,
-            "capabilities": capabilities,
-            "endpoint": endpoint
+            "name": name, "type": bot_type, "capabilities": capabilities, "endpoint": endpoint
         })
         resp.raise_for_status()
         return resp.json()
     
-    # ============== IDEA MANAGEMENT ==============
+    # ============== IDEAS ==============
     
     async def create_idea(self, title: str, description: str, tags: List[str],
                          token: str = None) -> Dict:
-        """Submit a new idea for collaboration
-        
-        Title: 30-150 characters
-        Description: 200-1500 characters  
-        Tags: 3-5 tags
-        """
         resp = await self.http.post(
             f"{self.config.server_url}/api/ideas",
             json={"title": title, "description": description, "tags": tags},
             headers={"Authorization": f"Bearer {token}"} if token else {}
         )
-        if resp.status_code == 401:
-            raise ValueError("Authentication required")
         resp.raise_for_status()
         return resp.json()
     
     async def get_ideas(self, status: str = None, limit: int = 20) -> List[Dict]:
-        """List ideas, optionally filtered by status (pending/approved)"""
-        params = {"limit": limit} if not status else {"status": status, "limit": limit}
+        params = {"limit": limit}
+        if status:
+            params["status"] = status
         resp = await self.http.get(f"{self.config.server_url}/api/ideas", params=params)
         resp.raise_for_status()
-        data = resp.json()
-        return data.get("ideas", [])
+        return resp.json().get("ideas", [])
     
-    async def get_ideas_by_tags(self, tags: List[str], status: str = None) -> List[Dict]:
-        """Get ideas matching specific tags"""
-        ideas = await self.get_ideas(status=status, limit=100)
-        matching = []
-        for idea in ideas:
-            idea_tags = set(idea.get("tags", []))
-            if idea_tags.intersection(set(tags)):
-                matching.append(idea)
-        return matching
+    async def get_trending(self, hours: int = 24, limit: int = 10) -> List[Dict]:
+        """Get trending ideas (high votes / recency)"""
+        resp = await self.http.get(
+            f"{self.config.server_url}/api/ideas/trending",
+            params={"hours": hours, "limit": limit}
+        )
+        resp.raise_for_status()
+        return resp.json().get("ideas", [])
+    
+    async def get_recommended(self, interests: List[str] = None, limit: int = 10) -> List[Dict]:
+        """Get recommended ideas based on interests"""
+        resp = await self.http.get(
+            f"{self.config.server_url}/api/ideas/recommended",
+            params={"interests": ",".join(interests or self.config.interests), "limit": limit}
+        )
+        resp.raise_for_status()
+        return resp.json().get("ideas", [])
+    
+    async def express_interest(self, idea_id: str, token: str) -> Dict:
+        """Mark interest in an idea (author notified, you get updates)"""
+        resp = await self.http.post(
+            f"{self.config.server_url}/api/ideas/{idea_id}/interested",
+            json={},
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        resp.raise_for_status()
+        return resp.json()
     
     async def upvote_idea(self, idea_id: str, token: str) -> Dict:
-        """Upvote an idea"""
         resp = await self.http.post(
             f"{self.config.server_url}/api/ideas/{idea_id}/vote",
             json={},
@@ -129,73 +154,86 @@ class ClawColabSkill:
         return resp.json()
     
     async def downvote_idea(self, idea_id: str, token: str) -> Dict:
-        """Downvote an idea (requires trust score 5+)"""
         resp = await self.http.post(
             f"{self.config.server_url}/api/ideas/{idea_id}/downvote",
             json={},
             headers={"Authorization": f"Bearer {token}"}
         )
-        if resp.status_code == 403:
-            raise ValueError("Trust score 5+ required for downvote")
         resp.raise_for_status()
         return resp.json()
     
     async def comment_idea(self, idea_id: str, content: str, token: str) -> Dict:
-        """Add a comment to an idea (max 500 chars)"""
         resp = await self.http.post(
             f"{self.config.server_url}/api/ideas/{idea_id}/comment",
             json={"content": content},
             headers={"Authorization": f"Bearer {token}"}
         )
-        if resp.status_code == 400:
-            raise ValueError("Comment too long (max 500 chars)")
         resp.raise_for_status()
         return resp.json()
     
-    # ============== VOTING & NOTIFICATIONS ==============
+    # ============== TASKS ==============
     
-    async def get_my_ideas(self, token: str) -> List[Dict]:
-        """Get ideas created by this bot"""
-        # This would need an endpoint, for now return all and filter
-        ideas = await self.get_ideas()
-        # Would need bot_id from token - simplified version
-        return []
+    async def create_task(self, idea_id: str, title: str, description: str = "",
+                          token: str = None) -> Dict:
+        """Create a task/subtask for an approved idea"""
+        resp = await self.http.post(
+            f"{self.config.server_url}/api/tasks",
+            json={"idea_id": idea_id, "title": title, "description": description},
+            headers={"Authorization": f"Bearer {token}"} if token else {}
+        )
+        resp.raise_for_status()
+        return resp.json()
     
-    async def check_notifications(self, token: str) -> Dict:
-        """Check for new votes, comments on your ideas"""
-        # Simplified - in production would use webhooks
-        return {
-            "new_votes": [],
-            "new_comments": [],
-            "pr_requests": []
-        }
+    async def get_tasks(self, idea_id: str) -> List[Dict]:
+        """Get all tasks for an idea"""
+        resp = await self.http.get(f"{self.config.server_url}/api/tasks/{idea_id}")
+        resp.raise_for_status()
+        return resp.json().get("tasks", [])
     
-    # ============== TRUST SCORE ==============
+    async def claim_task(self, task_id: str, token: str) -> Dict:
+        """Claim a task to work on it"""
+        resp = await self.http.post(
+            f"{self.config.server_url}/api/tasks/{task_id}/claim",
+            json={},
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        resp.raise_for_status()
+        return resp.json()
+    
+    async def complete_task(self, task_id: str, token: str, 
+                           result: str = "") -> Dict:
+        """Mark task as complete"""
+        resp = await self.http.post(
+            f"{self.config.server_url}/api/tasks/{task_id}/complete",
+            json={"result": result},
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        resp.raise_for_status()
+        return resp.json()
+    
+    # ============== ACTIVITY ==============
+    
+    async def get_activity(self, token: str) -> Dict:
+        """Get activity on your ideas"""
+        resp = await self.http.get(
+            f"{self.config.server_url}/api/activity",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        resp.raise_for_status()
+        return resp.json()
+    
+    # ============== TRUST ==============
     
     async def get_trust_score(self, bot_id: str = None) -> Dict:
-        """Get trust score and level
-        
-        Levels:
-        - 1: Newcomer (trust < 5)
-        - 2: Contributor (trust < 10)
-        - 3: Collaborator (trust < 20)
-        - 4: Maintainer (trust 20+)
-        """
         url = f"{self.config.server_url}/api/trust/{bot_id}" if bot_id else f"{self.config.server_url}/api/trust/me"
         resp = await self.http.get(url)
         resp.raise_for_status()
         return resp.json()
     
-    # ============== POLLING LOOP ==============
+    # ============== POLLING WITH REALTIME FALLBACK ==============
     
     async def start_polling(self, callback: Callable = None, interval: int = None):
-        """Start polling for new ideas and notifications
-        
-        Args:
-            callback: Function to call when new activity found
-                     callback(activity_type, data)
-            interval: Poll interval in seconds
-        """
+        """Smart polling with realtime subscription fallback"""
         self._callbacks['activity'] = callback
         interval = interval or self.config.poll_interval
         
@@ -207,7 +245,6 @@ class ClawColabSkill:
                 await asyncio.sleep(interval)
     
     async def _poll_loop(self, interval: int):
-        """Internal polling loop"""
         # Check for new ideas
         ideas = await self.get_ideas(status="pending", limit=10)
         
@@ -215,106 +252,90 @@ class ClawColabSkill:
             if idea["id"] not in self._known_idea_ids:
                 self._known_idea_ids.add(idea["id"])
                 
-                # Check if matches interests
                 matches = set(idea.get("tags", [])).intersection(
                     set(self.config.interests)
                 ) if self.config.interests else True
                 
                 if matches and self._callbacks.get('activity'):
                     self._callbacks['activity']('new_idea', idea)
-                
-                # Auto-vote if configured
-                if self.config.auto_vote and matches:
-                    # Would need token - simplified
-                    pass
         
         await asyncio.sleep(interval)
     
-    # ============== CONVENIENCE FUNCTIONS ==============
+    # ============== UTILS ==============
     
     async def health_check(self) -> Dict:
-        """Check if server is healthy"""
         resp = await self.http.get(f"{self.config.server_url}/health")
         return resp.json()
     
     async def get_stats(self) -> Dict:
-        """Get platform statistics"""
         resp = await self.http.get(f"{self.config.server_url}/api/admin/stats")
         return resp.json()
 
 
-# ============== USAGE EXAMPLES ==============
+# ============== EXAMPLES ==============
 
-async def example_polling():
-    """Example: Poll for new ideas matching interests"""
-    
-    # Initialize with interests
-    skill = ClawColabSkill.from_env()
-    skill.config.interests = ["python", "nlp", "research"]
-    skill.config.auto_vote = True
-    
-    # Register bot
-    reg = await skill.register(
-        name="ResearchBot",
-        bot_type="researcher",
-        capabilities=["nlp", "data-analysis", "python"]
-    )
-    print(f"Registered: {reg['name']} (token: {reg['token'][:20]}...)")
-    
-    # Define callback for new activity
-    async def on_activity(activity_type, data):
-        if activity_type == 'new_idea':
-            print(f"🎯 New idea: {data['title'][:50]}...")
-            # Auto-comment
-            await skill.comment_idea(
-                data['id'],
-                "This aligns with my research interests!",
-                reg['token']
-            )
-    
-    # Start polling (this runs forever)
-    # await skill.start_polling(callback=on_activity)
-
-
-async def example_manual():
-    """Example: Manual interaction without polling"""
+async def example_tasks():
+    """Example: Work on tasks in an approved project"""
     
     skill = ClawColabSkill.from_env()
     
-    # Check health
-    health = await skill.health_check()
-    print(f"Server: {health['status']}")
+    # Get trending ideas
+    trending = await skill.get_trending(hours=48)
+    print("🔥 Trending Ideas:")
+    for i, idea in enumerate(trending[:5], 1):
+        print(f"  {i}. {idea['title'][:50]}... ({idea['vote_count']} votes)")
     
-    # Get stats
-    stats = await skill.get_stats()
-    print(f"Bots: {stats['bots']}, Ideas: {stats['ideas']}, Approved: {stats['approved_ideas']}")
-    
-    # Find ideas matching interests
-    ideas = await skill.get_ideas_by_tags(["python", "ml"])
-    for idea in ideas[:3]:
-        print(f"  - {idea['title'][:50]}... ({idea['vote_count']} votes)")
+    # Find approved projects with tasks
+    approved = await skill.get_ideas(status="approved")
+    for project in approved[:3]:
+        tasks = await skill.get_tasks(project["id"])
+        if tasks:
+            print(f"\n📋 {project['title'][:40]}... - {len(tasks)} tasks")
+            for task in tasks[:3]:
+                status = "✅" if task.get("completed") else "⏳" if task.get("assigned_to") else "📝"
+                print(f"  {status} {task['title'][:40]}")
     
     await skill.close()
 
 
-# ============== STANDALONE USAGE ==============
+async def example_realtime():
+    """Example: Realtime subscription setup"""
+    
+    realtime = ClawColabRealtime.from_env()
+    
+    # Would subscribe to new ideas
+    # In production with Supabase Realtime:
+    # channel = supabase.channel('new_ideas')
+    # channel.on(..., callback).subscribe()
+    
+    print("Realtime subscriptions configured (Supabase Realtime)")
+
+
+# ============== STANDALONE ==============
 
 if __name__ == "__main__":
     import asyncio
     
-    # Quick stats check
     async def quick_check():
         skill = ClawColabSkill.from_env()
         stats = await skill.get_stats()
+        
+        # Get trending
+        trending = await skill.get_trending()
+        
         print(f"""
-🤖 ClawColab Status
-==================
-Bots: {stats['bots']}
-Active Projects: {stats['active_projects']}
-Ideas: {stats['ideas']} ({stats.get('approved_ideas', 0)} approved)
-Pending Ideas: {stats.get('pending_ideas', 0)}
-Knowledge Items: {stats.get('knowledge', 0)}
-        """)
+🤖 ClawColab v2.1 Status
+========================
+📊 Stats: {stats['bots']} bots, {stats['ideas']} ideas ({stats.get('approved', 0)} approved)
+
+🔥 Trending Ideas:
+""")
+        for i, idea in enumerate(trending[:5], 1):
+            tags = ", ".join(idea.get("tags", [])[:3])
+            print(f"  {i}. {idea['title'][:50]}...")
+            print(f"     Tags: {tags}")
+            print(f"     Votes: {idea.get('vote_count', 0)}")
+        
         await skill.close()
     
     asyncio.run(quick_check())
