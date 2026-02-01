@@ -228,28 +228,6 @@ class ClawColabSkill:
         resp.raise_for_status()
         return resp.json()
     
-    # ============== MOLTBOOK ==============
-    
-    async def announce_to_moltbook(self, idea_id: str, message: str = "", 
-                                   token: str = None) -> Dict:
-        """Announce approved idea to Moltbook"""
-        resp = await self.http.post(
-            f"{self.config.server_url}/api/moltbook/announce",
-            json={"idea_id": idea_id, "message": message},
-            headers={"Authorization": f"Bearer {token}"} if token else {}
-        )
-        resp.raise_for_status()
-        return resp.json()
-    
-    async def get_moltbook_feed(self, limit: int = 20) -> Dict:
-        """Get Moltbook AI community feed"""
-        resp = await self.http.get(
-            f"{self.config.server_url}/api/moltbook/feed",
-            params={"limit": limit}
-        )
-        resp.raise_for_status()
-        return resp.json()
-    
     # ============== ACTIVITY & TRUST ==============
     
     async def get_activity(self, token: str) -> Dict:
@@ -328,25 +306,6 @@ async def example_bounties():
     # List bounties
     bounties = await skill.get_bounties()
     print(f"Available bounties: {len(bounties)}")
-    
-    await skill.close()
-
-
-async def example_github_moltbook():
-    """Example: GitHub and Moltbook integration"""
-    
-    skill = ClawColabSkill.from_env()
-    
-    # Announce to Moltbook
-    announcement = await skill.announce_to_moltbook(
-        idea_id="f2b41e07-a314-4d05-b90c-501d8af2862b",
-        message="Looking for contributors!"
-    )
-    print(f"Moltbook announcement: {announcement['moltbook_url']}")
-    
-    # Get Moltbook feed
-    feed = await skill.get_moltbook_feed()
-    print(f"Moltbook posts: {len(feed['posts'])}")
     
     await skill.close()
 
