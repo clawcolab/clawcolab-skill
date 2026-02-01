@@ -77,13 +77,22 @@ class ClawColabSkill:
         resp.raise_for_status()
         return resp.json()
     
-    async def get_ideas(self, status: str = None, limit: int = 20) -> List[Dict]:
-        params = {"limit": limit}
+    async def get_ideas(self, status: str = None, limit: int = 20, offset: int = 0) -> Dict:
+        """Get ideas with pagination
+        
+        Returns: {"ideas": [...], "count": N, "total": N, "has_more": bool}
+        """
+        params = {"limit": limit, "offset": offset}
         if status:
             params["status"] = status
         resp = await self.http.get(f"{self.config.server_url}/api/ideas", params=params)
         resp.raise_for_status()
-        return resp.json().get("ideas", [])
+        return resp.json()
+    
+    async def get_ideas_list(self, status: str = None, limit: int = 20, offset: int = 0) -> List[Dict]:
+        """Get just the ideas list (convenience method)"""
+        data = await self.get_ideas(status=status, limit=limit, offset=offset)
+        return data.get("ideas", [])
     
     async def get_trending(self, hours: int = 24, limit: int = 10) -> List[Dict]:
         """Get trending ideas (high votes / recency)"""
@@ -152,10 +161,19 @@ class ClawColabSkill:
         resp.raise_for_status()
         return resp.json()
     
-    async def get_tasks(self, idea_id: str) -> List[Dict]:
-        resp = await self.http.get(f"{self.config.server_url}/api/tasks/{idea_id}")
+    async def get_tasks(self, idea_id: str, limit: int = 20, offset: int = 0) -> Dict:
+        """Get tasks for an idea with pagination"""
+        resp = await self.http.get(
+            f"{self.config.server_url}/api/tasks/{idea_id}",
+            params={"limit": limit, "offset": offset}
+        )
         resp.raise_for_status()
-        return resp.json().get("tasks", [])
+        return resp.json()
+    
+    async def get_tasks_list(self, idea_id: str, limit: int = 20, offset: int = 0) -> List[Dict]:
+        """Get just the tasks list"""
+        data = await self.get_tasks(idea_id, limit=limit, offset=offset)
+        return data.get("tasks", [])
     
     async def claim_task(self, task_id: str, token: str) -> Dict:
         resp = await self.http.post(
@@ -188,14 +206,33 @@ class ClawColabSkill:
         resp.raise_for_status()
         return resp.json()
     
-    async def get_bounties(self, status: str = "active", limit: int = 20) -> List[Dict]:
-        """List available bounties"""
+    async def get_bounties(self, status: str = "active", limit: int = 20, offset: int = 0) -> Dict:
+        """List available bounties with pagination"""
         resp = await self.http.get(
             f"{self.config.server_url}/api/bounties",
-            params={"status": status, "limit": limit}
+            params={"status": status, "limit": limit, "offset": offset}
         )
         resp.raise_for_status()
-        return resp.json().get("bounties", [])
+        return resp.json()
+    
+    async def get_bounties_list(self, status: str = "active", limit: int = 20, offset: int = 0) -> List[Dict]:
+        """Get just the bounties list"""
+        data = await self.get_bounties(status=status, limit=limit, offset=offset)
+        return data.get("bounties", [])
+    
+    async def get_bots(self, limit: int = 20, offset: int = 0) -> Dict:
+        """List active bots with pagination"""
+        resp = await self.http.get(
+            f"{self.config.server_url}/api/bots/list",
+            params={"limit": limit, "offset": offset}
+        )
+        resp.raise_for_status()
+        return resp.json()
+    
+    async def get_bots_list(self, limit: int = 20, offset: int = 0) -> List[Dict]:
+        """Get just the bots list"""
+        data = await self.get_bots(limit=limit, offset=offset)
+        return data.get("bots", [])
     
     async def claim_bounty(self, bounty_id: str, token: str) -> Dict:
         """Claim a bounty"""
