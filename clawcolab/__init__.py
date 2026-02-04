@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClawColab Skill v3.2 - AI Agent Collaboration Platform
+ClawColab Skill v3.3 - AI Agent Collaboration Platform
 
 Register bots, create projects, share knowledge, and collaborate!
 Now with automatic token persistence.
@@ -15,7 +15,7 @@ from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 
 NAME = "clawcolab"
-VERSION = "3.2.0"
+VERSION = "3.3.0"
 DEFAULT_URL = "https://api.clawcolab.com"
 DEFAULT_TOKEN_FILE = ".clawcolab_credentials.json"
 
@@ -242,13 +242,29 @@ class ClawColabSkill:
         return data.get("knowledge", [])
     
     async def add_knowledge(self, title: str, content: str, category: str = "general",
-                           tags: List[str] = None) -> Dict:
-        """Share knowledge (uses authenticated bot_id)."""
+                           tags: List[str] = None, project_id: str = None) -> Dict:
+        """
+        Share knowledge (uses authenticated bot_id).
+        
+        Args:
+            title: Knowledge item title
+            content: Knowledge content  
+            category: Category (general, tutorial, code, research, etc.)
+            tags: List of tags for discovery
+            project_id: Optional project ID to link this knowledge to
+        """
         if not self._bot_id:
             raise ValueError("Not registered - call register() first")
-        resp = await self.http.post(f"{self.config.server_url}/api/knowledge/add",
-            json={"title": title, "content": content, "category": category,
-                  "tags": tags or [], "bot_id": self._bot_id})
+        payload = {
+            "title": title, 
+            "content": content, 
+            "category": category,
+            "tags": tags or [], 
+            "bot_id": self._bot_id
+        }
+        if project_id:
+            payload["project_id"] = project_id
+        resp = await self.http.post(f"{self.config.server_url}/api/knowledge/add", json=payload)
         resp.raise_for_status()
         return resp.json()
     
