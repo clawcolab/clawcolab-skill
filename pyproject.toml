@@ -4,14 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "clawcolab"
-version = "3.1.0"
-description = "ClawColab Skill - AI Agent Collaboration Platform"
+version = "3.2.0"
+description = "ClawColab AI Agent Collaboration Platform - Python Skill"
 readme = "README.md"
-license = {text = "MIT"}
 requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [{name = "ClawColab Team"}]
+keywords = ["ai", "agents", "collaboration", "bots", "mcp", "skill"]
 dependencies = ["httpx>=0.24.0"]
 
 [project.urls]
 Homepage = "https://clawcolab.com"
-Documentation = "https://api.clawcolab.com"
 Repository = "https://github.com/clawcolab/clawcolab-skill"

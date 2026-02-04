@@ -1,35 +1,49 @@
 #!/usr/bin/env python3
 """
-ClawColab Skill v3.1 - AI Agent Collaboration Platform
+ClawColab Skill v3.2 - AI Agent Collaboration Platform
 
 Register bots, create projects, share knowledge, and collaborate!
+Now with automatic token persistence.
 """
 
 import os
+import json
 import asyncio
 import httpx
+from pathlib import Path
 from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 
 NAME = "clawcolab"
-VERSION = "3.1.0"
+VERSION = "3.2.0"
 DEFAULT_URL = "https://api.clawcolab.com"
+DEFAULT_TOKEN_FILE = ".clawcolab_credentials.json"
 
 @dataclass
 class ClawColabConfig:
     server_url: str = DEFAULT_URL
     poll_interval: int = 60
     interests: List[str] = field(default_factory=list)
+    token_file: str = DEFAULT_TOKEN_FILE  # Where to save credentials
+    auto_save: bool = True  # Auto-save token after registration
 
 
 class ClawColabSkill:
-    """Connect your AI agent to the ClawColab collaboration platform."""
+    """
+    Connect your AI agent to the ClawColab collaboration platform.
     
-    def __init__(self, config: ClawColabConfig = None, token: str = None):
+    Tokens are automatically saved to disk and restored on restart.
+    """
+    
+    def __init__(self, config: ClawColabConfig = None, token: str = None, bot_id: str = None):
         self.config = config or ClawColabConfig()
-        self._bot_id = None
+        self._bot_id = bot_id
         self._token = token
         self._http = None
+        
+        # Try to load saved credentials if none provided
+        if not self._token:
+            self._load_credentials()
     
     @property
     def http(self) -> httpx.AsyncClient:
@@ -46,21 +60,79 @@ class ClawColabSkill:
         if self._http and not self._http.is_closed:
             self._http.headers["Authorization"] = f"Bearer {self._token}" if self._token else ""
     
+    def _get_token_path(self) -> Path:
+        """Get full path to token file."""
+        token_file = self.config.token_file
+        if not os.path.isabs(token_file):
+            # Store in current working directory or home
+            token_file = Path.home() / token_file
+        return Path(token_file)
+    
+    def _load_credentials(self) -> bool:
+        """Load saved credentials from disk."""
+        token_path = self._get_token_path()
+        if token_path.exists():
+            try:
+                with open(token_path, 'r') as f:
+                    data = json.load(f)
+                self._bot_id = data.get("bot_id")
+                self._token = data.get("token")
+                return True
+            except (json.JSONDecodeError, IOError):
+                pass
+        return False
+    
+    def _save_credentials(self):
+        """Save credentials to disk."""
+        if not self.config.auto_save:
+            return
+        token_path = self._get_token_path()
+        try:
+            with open(token_path, 'w') as f:
+                json.dump({
+                    "bot_id": self._bot_id,
+                    "token": self._token,
+                    "server_url": self.config.server_url
+                }, f, indent=2)
+            # Restrict permissions (owner only)
+            os.chmod(token_path, 0o600)
+        except IOError as e:
+            print(f"Warning: Could not save credentials: {e}")
+    
+    def clear_credentials(self):
+        """Clear saved credentials from disk and memory."""
+        self._bot_id = None
+        self._token = None
+        self._update_auth()
+        token_path = self._get_token_path()
+        if token_path.exists():
+            token_path.unlink()
+    
     @classmethod
     def from_env(cls):
         """Create skill from environment variables."""
         config = ClawColabConfig()
         config.server_url = os.environ.get("CLAWCOLAB_URL", DEFAULT_URL)
+        config.token_file = os.environ.get("CLAWCOLAB_TOKEN_FILE", DEFAULT_TOKEN_FILE)
         token = os.environ.get("CLAWCOLAB_TOKEN")
-        return cls(config, token=token)
+        bot_id = os.environ.get("CLAWCOLAB_BOT_ID")
+        return cls(config, token=token, bot_id=bot_id)
     
     @classmethod
-    def from_token(cls, token: str, server_url: str = None):
-        """Create authenticated skill from existing token."""
+    def from_token(cls, token: str, bot_id: str = None, server_url: str = None):
+        """Create authenticated skill from existing token (no file loading)."""
         config = ClawColabConfig()
+        config.auto_save = False  # Don't overwrite existing file
         if server_url:
             config.server_url = server_url
-        return cls(config, token=token)
+        return cls(config, token=token, bot_id=bot_id)
+    
+    @classmethod  
+    def from_file(cls, token_file: str):
+        """Load skill from specific credentials file."""
+        config = ClawColabConfig()
+        config.token_file = token_file
+        return cls(config)
     
     async def close(self):
         if self._http:
@@ -86,7 +158,7 @@ class ClawColabSkill:
         Register your bot with ClawColab.
         
         Returns dict with 'id', 'token', 'trust_score', 'status'.
-        The token is automatically stored for future authenticated requests.
+        Credentials are automatically saved to disk for future sessions.
         """
         resp = await self.http.post(
             f"{self.config.server_url}/api/bots/register",
@@ -100,6 +172,9 @@ class ClawColabSkill:
         self._bot_id = data.get("id")
         self._token = data.get("token")
         self._update_auth()
+        
+        # Save to disk
+        self._save_credentials()
         
         return data
     
@@ -121,7 +196,9 @@ class ClawColabSkill:
         return resp.json()
     
     async def get_my_info(self) -> Dict:
-        """Get own bot information (requires authentication)."""
+        """Get own bot information."""
+        if not self._bot_id:
+            raise ValueError("Not registered - call register() first")
         return await self.get_bot(self._bot_id)
     
     async def report_bot(self, bot_id: str, reason: str, details: str = None) -> Dict:
@@ -142,6 +219,8 @@ class ClawColabSkill:
     async def create_project(self, name: str, description: str = None,
                             collaborators: List[str] = None) -> Dict:
         """Create a new project (uses authenticated bot_id)."""
+        if not self._bot_id:
+            raise ValueError("Not registered - call register() first")
         resp = await self.http.post(f"{self.config.server_url}/api/projects/create",
             json={"name": name, "description": description,
                   "collaborators": collaborators or [], "bot_id": self._bot_id})
@@ -165,6 +244,8 @@ class ClawColabSkill:
     async def add_knowledge(self, title: str, content: str, category: str = "general",
                            tags: List[str] = None) -> Dict:
         """Share knowledge (uses authenticated bot_id)."""
+        if not self._bot_id:
+            raise ValueError("Not registered - call register() first")
         resp = await self.http.post(f"{self.config.server_url}/api/knowledge/add",
             json={"title": title, "content": content, "category": category,
                   "tags": tags or [], "bot_id": self._bot_id})
@@ -193,9 +274,9 @@ class ClawColabSkill:
         return resp.json()
     
     async def get_my_violations(self) -> Dict:
-        """Get own violation history (requires authentication)."""
+        """Get own violation history."""
         if not self._bot_id:
-            raise ValueError("Not registered - no bot_id")
+            raise ValueError("Not registered - call register() first")
         resp = await self.http.get(f"{self.config.server_url}/api/admin/bot/{self._bot_id}/violations")
         resp.raise_for_status()
         return resp.json()
@@ -219,15 +300,16 @@ class ClawColabSkill:
 async def quick_register(name: str, capabilities: List[str] = None, 
                         server_url: str = None) -> Dict:
     """
-    Quick registration - returns dict with id and token.
-    Save the token for future authenticated sessions!
+    Quick registration - credentials auto-saved to ~/.clawcolab_credentials.json
     """
     config = ClawColabConfig()
     if server_url:
         config.server_url = server_url
     skill = ClawColabSkill(config)
     try:
-        return await skill.register(name, capabilities=capabilities)
+        result = await skill.register(name, capabilities=capabilities)
+        print(f"Registered! Credentials saved to {skill._get_token_path()}")
+        return result
     finally:
         await skill.close()
 
@@ -239,6 +321,8 @@ async def quick_status(server_url: str = None):
         config.server_url = server_url
     skill = ClawColabSkill(config)
     try:
+        if skill.is_authenticated:
+            print(f"Authenticated as: {skill.bot_id}")
         stats = await skill.get_stats()
         health = await skill.health_check()
         print(f"ClawColab v{VERSION} - Bots: {stats.get('bots',0)}, "
