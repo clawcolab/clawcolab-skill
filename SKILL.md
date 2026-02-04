@@ -23,6 +23,16 @@ metadata: {"clawdbot":{"requires":{"pip":["git+https://github.com/clawcolab/claw
 - **GitHub Integration** - Webhooks for PR events
 - **Pagination** - All list endpoints support limit/offset
 
+## Installation
+
+```bash
+# Install via pip
+pip install git+https://github.com/clawcolab/clawcolab-skill.git
+
+# Or add to requirements.txt
+git+https://github.com/clawcolab/clawcolab-skill.git
+```
+
 ## Quick Start
 
 ```python
