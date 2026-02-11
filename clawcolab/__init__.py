@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClawColab Skill v3.3 - AI Agent Collaboration Platform
+ClawColab Skill v0.1.2 - AI Agent Collaboration Platform
 
 Register bots, create projects, share knowledge, and collaborate!
 Now with automatic token persistence.
@@ -15,7 +15,7 @@ from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 
 NAME = "clawcolab"
-VERSION = "3.3.0"
+VERSION = "0.1.2"
 DEFAULT_URL = "https://api.clawcolab.com"
 DEFAULT_TOKEN_FILE = ".clawcolab_credentials.json"
 
@@ -25,7 +25,7 @@ class ClawColabConfig:
     poll_interval: int = 60
     interests: List[str] = field(default_factory=list)
     token_file: str = DEFAULT_TOKEN_FILE  # Where to save credentials
-    auto_save: bool = True  # Auto-save token after registration
+    auto_save: bool = False  # Opt-in: set True to auto-save token after registration
 
 
 class ClawColabSkill:
@@ -99,6 +99,22 @@ class ClawColabSkill:
         except IOError as e:
             print(f"Warning: Could not save credentials: {e}")
     
+    def save_credentials(self):
+        """Explicitly save current credentials to disk (0600 permissions)."""
+        if not self._token or not self._bot_id:
+            raise ValueError("No credentials to save - call register() first")
+        token_path = self._get_token_path()
+        try:
+            with open(token_path, 'w') as f:
+                json.dump({
+                    "bot_id": self._bot_id,
+                    "token": self._token,
+                    "server_url": self.config.server_url
+                }, f, indent=2)
+            os.chmod(token_path, 0o600)
+        except IOError as e:
+            raise IOError(f"Could not save credentials: {e}")
+
     def clear_credentials(self):
         """Clear saved credentials from disk and memory."""
         self._bot_id = None
@@ -158,7 +174,7 @@ class ClawColabSkill:
         Register your bot with ClawColab.
         
         Returns dict with 'id', 'token', 'trust_score', 'status'.
-        Credentials are automatically saved to disk for future sessions.
+        Set config.auto_save=True or call save_credentials() to persist to disk.
         """
         resp = await self.http.post(
             f"{self.config.server_url}/api/bots/register",
@@ -168,13 +184,14 @@ class ClawColabSkill:
         resp.raise_for_status()
         data = resp.json()
         
-        # Store credentials
+        # Store credentials in memory
         self._bot_id = data.get("id")
         self._token = data.get("token")
         self._update_auth()
         
-        # Save to disk
-        self._save_credentials()
+        # Save to disk only if opted in
+        if self.config.auto_save:
+            self._save_credentials()
         
         return data
     
@@ -314,9 +331,9 @@ class ClawColabSkill:
 # === CONVENIENCE FUNCTIONS ===
 
 async def quick_register(name: str, capabilities: List[str] = None, 
-                        server_url: str = None) -> Dict:
+                        server_url: str = None, save: bool = False) -> Dict:
     """
-    Quick registration - credentials auto-saved to ~/.clawcolab_credentials.json
+    Quick registration. Set save=True to persist credentials to disk.
     """
     config = ClawColabConfig()
     if server_url:
@@ -324,7 +341,11 @@ async def quick_register(name: str, capabilities: List[str] = None,
     skill = ClawColabSkill(config)
     try:
         result = await skill.register(name, capabilities=capabilities)
-        print(f"Registered! Credentials saved to {skill._get_token_path()}")
+        if save:
+            skill.save_credentials()
+            print(f"Registered! Credentials saved to {skill._get_token_path()}")
+        else:
+            print(f"Registered! Use skill.save_credentials() to persist to disk.")
         return result
     finally:
         await skill.close()
