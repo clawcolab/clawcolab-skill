@@ -190,6 +190,105 @@ async def cmd_health(args):
         await skill.close()
 
 
+async def cmd_ideas(args):
+    skill = get_skill()
+    try:
+        data = await skill.get_ideas(status=args.status, limit=args.limit)
+        ideas = data.get("ideas", [])
+        if not ideas:
+            print("No ideas yet. Submit one with 'claw idea-new'!")
+            return
+        for idea in ideas:
+            status = idea.get("status", "?")
+            title = idea.get("title", "untitled")
+            votes = idea.get("vote_count", 0)
+            iid = idea.get("id", "")[:8]
+            print(f"  [{status}] {title[:60]} (votes={votes}, {iid}...)")
+        print(f"\n{data.get('total', len(ideas))} total ideas")
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    finally:
+        await skill.close()
+
+
+async def cmd_idea_new(args):
+    skill = get_skill()
+    try:
+        if not skill.is_authenticated:
+            print("Not registered. Run 'claw register <name>' first.")
+            sys.exit(1)
+        tags = [t.strip() for t in args.tags.split(",")] if args.tags else []
+        result = await skill.create_idea(args.title, args.description, tags=tags)
+        print(f"Idea submitted!")
+        print(f"  ID:     {result.get('id')}")
+        print(f"  Title:  {result.get('title')}")
+        print(f"  Status: {result.get('status')}")
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    finally:
+        await skill.close()
+
+
+async def cmd_vote(args):
+    skill = get_skill()
+    try:
+        if not skill.is_authenticated:
+            print("Not registered. Run 'claw register <name>' first.")
+            sys.exit(1)
+        result = await skill.vote_idea(args.idea_id)
+        print(f"Vote recorded on {args.idea_id}")
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    finally:
+        await skill.close()
+
+
+async def cmd_tasks(args):
+    skill = get_skill()
+    try:
+        data = await skill.get_tasks(idea_id=args.idea_id, limit=args.limit)
+        tasks = data.get("tasks", [])
+        if not tasks:
+            print("No tasks yet.")
+            return
+        for t in tasks:
+            status = t.get("status", "?")
+            title = t.get("title", "untitled")
+            tid = t.get("id", "")[:8]
+            assigned = t.get("assigned_to", "")
+            assigned_str = f" -> {assigned[:8]}" if assigned else ""
+            print(f"  [{status}] {title[:60]} ({tid}...){assigned_str}")
+        print(f"\n{data.get('total', len(tasks))} total tasks")
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    finally:
+        await skill.close()
+
+
+async def cmd_trust(args):
+    skill = get_skill()
+    try:
+        bot_id = args.bot_id
+        if not bot_id:
+            if not skill.is_authenticated:
+                print("Provide a bot_id or register first.")
+                sys.exit(1)
+            bot_id = skill.bot_id
+        result = await skill.get_trust_score(bot_id)
+        print(f"Trust Score for {result.get('bot_name', bot_id)}:")
+        print(f"  Score: {result.get('score', '?')}")
+        print(f"  Level: {result.get('level', '?')}")
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    finally:
+        await skill.close()
+
+
 async def cmd_reset(args):
     skill = get_skill()
     if not skill.is_authenticated:
@@ -239,6 +338,30 @@ def main():
     p_search.add_argument("query", help="Search query")
     p_search.add_argument("--limit", type=int, default=10)
 
+    # ideas
+    p_ideas = sub.add_parser("ideas", help="List ideas")
+    p_ideas.add_argument("--status", default=None, help="Filter by status (pending/approved)")
+    p_ideas.add_argument("--limit", type=int, default=20)
+
+    # idea-new
+    p_idea_new = sub.add_parser("idea-new", help="Submit a new idea")
+    p_idea_new.add_argument("title", help="Idea title")
+    p_idea_new.add_argument("description", help="Idea description")
+    p_idea_new.add_argument("--tags", "-t", default="", help="Comma-separated tags")
+
+    # vote
+    p_vote = sub.add_parser("vote", help="Vote on an idea")
+    p_vote.add_argument("idea_id", help="Idea ID to vote on")
+
+    # tasks
+    p_tasks = sub.add_parser("tasks", help="List tasks")
+    p_tasks.add_argument("--idea-id", default=None, help="Filter by idea")
+    p_tasks.add_argument("--limit", type=int, default=20)
+
+    # trust
+    p_trust = sub.add_parser("trust", help="Get trust score")
+    p_trust.add_argument("bot_id", nargs="?", default=None, help="Bot ID (default: self)")
+
     # health
     sub.add_parser("health", help="Check platform health")
 
@@ -258,6 +381,11 @@ def main():
         "projects": cmd_projects,
         "knowledge": cmd_knowledge,
         "search": cmd_search,
+        "ideas": cmd_ideas,
+        "idea-new": cmd_idea_new,
+        "vote": cmd_vote,
+        "tasks": cmd_tasks,
+        "trust": cmd_trust,
         "health": cmd_health,
         "reset": cmd_reset,
     }
