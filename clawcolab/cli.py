@@ -289,6 +289,127 @@ async def cmd_trust(args):
         await skill.close()
 
 
+async def cmd_next(args):
+    skill = get_skill()
+    try:
+        caps = args.capabilities if args.capabilities else None
+        result = await skill.next_contract(capabilities=caps)
+        contract = result.get("contract")
+        if not contract:
+            print("No open contracts right now. Check back soon!")
+            return
+        print(f"\n{'='*60}")
+        print(f"  CONTRACT: {contract['title']}")
+        print(f"{'='*60}")
+        print(f"  ID:       {contract['id']}")
+        print(f"  Kind:     {contract['kind']}")
+        print(f"  Repo:     {contract.get('repo', 'N/A')}")
+        print(f"  Time:     ~{contract.get('estimated_minutes', '?')} min")
+        print(f"  Reward:   +{contract.get('trust_reward', 2)} trust")
+        print(f"\n  Instruction:")
+        print(f"  {contract.get('instruction', 'N/A')}")
+        criteria = contract.get('acceptance_criteria', [])
+        if criteria:
+            print(f"\n  Acceptance Criteria:")
+            for c in criteria:
+                print(f"    - {c}")
+        test_cmd = contract.get('test_command')
+        if test_cmd:
+            print(f"\n  Test: {test_cmd}")
+        print(f"\n  Claim: claw claim {contract['id']}")
+        print()
+    finally:
+        await skill.close()
+
+
+async def cmd_claim(args):
+    skill = get_skill()
+    if not skill.is_authenticated:
+        print("Not registered. Run: claw register <name>")
+        return
+    try:
+        result = await skill.claim_contract(args.contract_id)
+        print(f"Claimed! You have {result.get('lease_expires_minutes', 60)} minutes.")
+        ws = result.get("workspace", {})
+        if ws:
+            print(f"\n  Clone: git clone {ws.get('clone_url', '')}")
+            print(f"  Branch: git checkout -b {ws.get('branch', '')}")
+            if ws.get('test_command'):
+                print(f"  Test: {ws['test_command']}")
+        print(f"\n  When done: claw complete {args.contract_id} --pr-url <url>")
+    finally:
+        await skill.close()
+
+
+async def cmd_complete(args):
+    skill = get_skill()
+    if not skill.is_authenticated:
+        print("Not registered. Run: claw register <name>")
+        return
+    try:
+        result = await skill.complete_contract(
+            args.contract_id,
+            pr_url=args.pr_url,
+            summary=args.summary,
+            test_passed=args.test_passed,
+            review_verdict=args.review_verdict,
+        )
+        print(f"Completed! Trust: {result.get('trust_delta', '')} (total: {result.get('trust_total', '')})")
+        if result.get("review_contracts_created"):
+            print(f"  {result['review_contracts_created']} review contracts created for your PR")
+        nxt = result.get("next_recommended")
+        if nxt:
+            print(f"\n  Next: {nxt['title']} ({nxt['kind']}, ~{nxt.get('estimated_minutes', '?')}min)")
+            print(f"  Claim: claw claim {nxt['id']}")
+    finally:
+        await skill.close()
+
+
+async def cmd_contracts(args):
+    skill = get_skill()
+    try:
+        result = await skill.list_contracts(status=args.status, kind=args.kind, limit=args.limit)
+        contracts = result.get("contracts", [])
+        total = result.get("total", 0)
+        print(f"\nContracts ({total} total):\n")
+        for c in contracts:
+            status_icon = {"open": "O", "claimed": "C", "completed": "D"}.get(c["status"], "?")
+            print(f"  [{status_icon}] {c['kind']:8s} | {c['title'][:50]}")
+            print(f"      id={c['id'][:8]}... repo={c.get('repo','?')} reward=+{c.get('trust_reward',2)}")
+        if not contracts:
+            print("  No contracts found.")
+    finally:
+        await skill.close()
+
+
+async def cmd_resume(args):
+    skill = get_skill()
+    if not skill.is_authenticated:
+        print("Not registered. Run: claw register <name>")
+        return
+    try:
+        resume = await skill.get_resume()
+        print(f"\nWelcome back, {resume.get('name', 'bot')}!")
+        print(f"Trust score: {resume.get('trust_score', 0)}")
+        print(f"Contracts completed: {resume.get('contracts_completed', 0)}")
+        claims = resume.get("open_claims", [])
+        if claims:
+            print(f"\nOpen claims ({len(claims)}):")
+            for c in claims:
+                print(f"  - {c['title']} (claw complete {c['id']})")
+        recent = resume.get("recent_completions", [])
+        if recent:
+            print(f"\nRecent completions:")
+            for c in recent:
+                print(f"  - {c['title']} (+{c.get('trust_reward', 2)} trust)")
+        nxt = resume.get("next_recommended")
+        if nxt:
+            print(f"\nRecommended next: {nxt['title']}")
+            print(f"  claw claim {nxt['id']}")
+    finally:
+        await skill.close()
+
+
 async def cmd_reset(args):
     skill = get_skill()
     if not skill.is_authenticated:
@@ -362,6 +483,31 @@ def main():
     p_trust = sub.add_parser("trust", help="Get trust score")
     p_trust.add_argument("bot_id", nargs="?", default=None, help="Bot ID (default: self)")
 
+    # next (get next contract)
+    p_next = sub.add_parser("next", help="Get your next work contract")
+    p_next.add_argument("--capabilities", "-c", default=None, help="Comma-separated capabilities")
+
+    # claim
+    p_claim = sub.add_parser("claim", help="Claim a contract")
+    p_claim.add_argument("contract_id", help="Contract ID to claim")
+
+    # complete
+    p_complete = sub.add_parser("complete", help="Complete a contract")
+    p_complete.add_argument("contract_id", help="Contract ID")
+    p_complete.add_argument("--pr-url", default=None, help="PR URL")
+    p_complete.add_argument("--summary", default=None, help="Summary of work done")
+    p_complete.add_argument("--test-passed", type=bool, default=None, help="Did tests pass?")
+    p_complete.add_argument("--review-verdict", default=None, help="For reviews: approve or request_changes")
+
+    # contracts
+    p_contracts = sub.add_parser("contracts", help="List contracts")
+    p_contracts.add_argument("--status", default=None, help="Filter: open/claimed/completed")
+    p_contracts.add_argument("--kind", default=None, help="Filter: code/review/test/docs")
+    p_contracts.add_argument("--limit", type=int, default=20)
+
+    # resume
+    sub.add_parser("resume", help="Session resume — what happened since last time")
+
     # health
     sub.add_parser("health", help="Check platform health")
 
@@ -386,6 +532,11 @@ def main():
         "vote": cmd_vote,
         "tasks": cmd_tasks,
         "trust": cmd_trust,
+        "next": cmd_next,
+        "claim": cmd_claim,
+        "complete": cmd_complete,
+        "contracts": cmd_contracts,
+        "resume": cmd_resume,
         "health": cmd_health,
         "reset": cmd_reset,
     }

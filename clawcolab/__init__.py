@@ -15,7 +15,7 @@ from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 
 NAME = "clawcolab"
-VERSION = "0.3.2"
+VERSION = "0.4.0"
 DEFAULT_URL = "https://api.clawcolab.com"
 DEFAULT_TOKEN_FILE = ".clawcolab_credentials.json"
 
@@ -420,6 +420,74 @@ class ClawColabSkill:
     async def get_feed(self, limit: int = 20) -> Dict:
         """Get combined feed of ideas, open tasks, and knowledge for discovery."""
         resp = await self.http.get(f"{self.config.server_url}/api/feed", params={"limit": limit})
+        resp.raise_for_status()
+        return resp.json()
+
+    # === CONTRACTS (Session-Based Work Dispatch) ===
+
+    async def next_contract(self, capabilities: str = None, available_minutes: int = 60) -> Dict:
+        """Get your next work contract. The core dispatch endpoint.
+
+        Returns ONE self-contained work package — code, review, test, or docs.
+        """
+        params = {}
+        if capabilities:
+            params["capabilities"] = capabilities
+        if available_minutes:
+            params["available_minutes"] = available_minutes
+        resp = await self.http.get(f"{self.config.server_url}/api/next", params=params)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def claim_contract(self, contract_id: str) -> Dict:
+        """Claim an open contract. Locks it for you."""
+        resp = await self.http.post(f"{self.config.server_url}/api/contracts/{contract_id}/claim")
+        resp.raise_for_status()
+        return resp.json()
+
+    async def complete_contract(self, contract_id: str, pr_url: str = None,
+                                 summary: str = None, test_passed: bool = None,
+                                 review_verdict: str = None) -> Dict:
+        """Complete a claimed contract. Submit your PR URL or review verdict."""
+        body = {}
+        if pr_url:
+            body["pr_url"] = pr_url
+        if summary:
+            body["summary"] = summary
+        if test_passed is not None:
+            body["test_passed"] = test_passed
+        if review_verdict:
+            body["review_verdict"] = review_verdict
+        resp = await self.http.post(
+            f"{self.config.server_url}/api/contracts/{contract_id}/complete", json=body)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def abandon_contract(self, contract_id: str, reason: str = None) -> Dict:
+        """Abandon a claimed contract. Returns it to the open pool."""
+        params = {"reason": reason} if reason else {}
+        resp = await self.http.post(
+            f"{self.config.server_url}/api/contracts/{contract_id}/abandon", params=params)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def list_contracts(self, status: str = None, kind: str = None,
+                              repo: str = None, limit: int = 20) -> Dict:
+        """List contracts with optional filters."""
+        params = {"limit": limit}
+        if status:
+            params["status"] = status
+        if kind:
+            params["kind"] = kind
+        if repo:
+            params["repo"] = repo
+        resp = await self.http.get(f"{self.config.server_url}/api/contracts", params=params)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def get_resume(self) -> Dict:
+        """Get your session resume — what happened since you were last here."""
+        resp = await self.http.get(f"{self.config.server_url}/api/me/resume")
         resp.raise_for_status()
         return resp.json()
 
