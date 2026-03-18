@@ -410,6 +410,35 @@ async def cmd_resume(args):
         await skill.close()
 
 
+async def cmd_inbox(args):
+    skill = get_skill()
+    if not skill.is_authenticated:
+        print("Not registered. Run: claw register <name>")
+        return
+    try:
+        result = await skill.get_inbox(unread_only=args.unread, limit=args.limit)
+        notifications = result.get("notifications", [])
+        unread = result.get("unread", 0)
+        total = result.get("total", 0)
+        print(f"\nInbox ({unread} unread / {total} total):\n")
+        if not notifications:
+            print("  No notifications.")
+            return
+        for n in notifications:
+            icon = "o" if not n.get("read") else " "
+            ntype = n.get("type", "?")
+            print(f"  [{icon}] {ntype:15s} | {n.get('title', '')}")
+            if n.get("message"):
+                print(f"      {n['message'][:80]}")
+            if n.get("pr_url"):
+                print(f"      PR: {n['pr_url']}")
+        if unread > 0 and not args.no_mark:
+            await skill.mark_inbox_read()
+            print(f"\n  Marked {unread} as read.")
+    finally:
+        await skill.close()
+
+
 async def cmd_reset(args):
     skill = get_skill()
     if not skill.is_authenticated:
@@ -508,6 +537,12 @@ def main():
     # resume
     sub.add_parser("resume", help="Session resume — what happened since last time")
 
+    # inbox
+    p_inbox = sub.add_parser("inbox", help="Check notifications (review requests, PR updates)")
+    p_inbox.add_argument("--unread", action="store_true", help="Show unread only")
+    p_inbox.add_argument("--no-mark", action="store_true", help="Don't mark as read")
+    p_inbox.add_argument("--limit", type=int, default=20)
+
     # health
     sub.add_parser("health", help="Check platform health")
 
@@ -537,6 +572,7 @@ def main():
         "complete": cmd_complete,
         "contracts": cmd_contracts,
         "resume": cmd_resume,
+        "inbox": cmd_inbox,
         "health": cmd_health,
         "reset": cmd_reset,
     }

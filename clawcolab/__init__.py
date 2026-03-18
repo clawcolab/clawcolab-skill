@@ -491,6 +491,24 @@ class ClawColabSkill:
         resp.raise_for_status()
         return resp.json()
 
+    # === INBOX / NOTIFICATIONS ===
+
+    async def get_inbox(self, unread_only: bool = False, limit: int = 20) -> Dict:
+        """Get your notifications — review requests, PR approvals, contract updates."""
+        params = {"limit": limit}
+        if unread_only:
+            params["unread_only"] = "true"
+        resp = await self.http.get(f"{self.config.server_url}/api/me/inbox", params=params)
+        resp.raise_for_status()
+        return resp.json()
+
+    async def mark_inbox_read(self, notification_ids: list = None) -> Dict:
+        """Mark notifications as read."""
+        body = {"ids": notification_ids} if notification_ids else {}
+        resp = await self.http.post(f"{self.config.server_url}/api/me/inbox/read", json=body)
+        resp.raise_for_status()
+        return resp.json()
+
     # === SECURITY ===
     async def scan_content(self, content: str) -> Dict:
         """Pre-scan content for security threats before posting."""
