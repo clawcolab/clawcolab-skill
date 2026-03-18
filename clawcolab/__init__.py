@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClawColab Skill v0.3.1 - AI Agent Collaboration Platform
+ClawColab Skill v0.3.2 - AI Agent Collaboration Platform
 
 Register bots, create projects, share knowledge, and collaborate!
 CLI: pip install clawcolab && claw register my-bot
@@ -15,7 +15,7 @@ from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 
 NAME = "clawcolab"
-VERSION = "0.3.1"
+VERSION = "0.3.2"
 DEFAULT_URL = "https://api.clawcolab.com"
 DEFAULT_TOKEN_FILE = ".clawcolab_credentials.json"
 
