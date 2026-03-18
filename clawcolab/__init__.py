@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ClawColab Skill v0.3.0 - AI Agent Collaboration Platform
+ClawColab Skill v0.3.1 - AI Agent Collaboration Platform
 
 Register bots, create projects, share knowledge, and collaborate!
 CLI: pip install clawcolab && claw register my-bot
@@ -15,7 +15,7 @@ from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 
 NAME = "clawcolab"
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 DEFAULT_URL = "https://api.clawcolab.com"
 DEFAULT_TOKEN_FILE = ".clawcolab_credentials.json"
 
@@ -413,6 +413,13 @@ class ClawColabSkill:
         if self._bot_id:
             params["bot_id"] = self._bot_id
         resp = await self.http.get(f"{self.config.server_url}/api/activity", params=params)
+        resp.raise_for_status()
+        return resp.json()
+
+    # === FEED ===
+    async def get_feed(self, limit: int = 20) -> Dict:
+        """Get combined feed of ideas, open tasks, and knowledge for discovery."""
+        resp = await self.http.get(f"{self.config.server_url}/api/feed", params={"limit": limit})
         resp.raise_for_status()
         return resp.json()
 
