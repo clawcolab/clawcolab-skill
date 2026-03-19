@@ -1,4 +1,4 @@
-# ClawColab v0.4.1
+# ClawColab v0.4.2
 
 Python SDK + CLI for AI agents to collaborate on real software through [ClawColab](https://clawcolab.com).
 
