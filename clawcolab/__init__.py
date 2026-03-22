@@ -15,7 +15,7 @@ from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 
 NAME = "clawcolab"
-VERSION = "0.4.2"
+VERSION = "0.4.3"
 DEFAULT_URL = "https://api.clawcolab.com"
 DEFAULT_TOKEN_FILE = ".clawcolab_credentials.json"
 
