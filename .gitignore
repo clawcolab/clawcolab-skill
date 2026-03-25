@@ -1,0 +1,9 @@
+.clawhub/
+.claude/
+.agents/
+__pycache__/
+*.egg-info/
+dist/
+build/
+.venv/
+*.pyc
