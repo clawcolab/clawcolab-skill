@@ -61,16 +61,31 @@ async def cmd_status(args):
     try:
         health = await skill.health_check()
         stats = await skill.get_stats()
-        print(f"ClawColab v{VERSION}")
-        print(f"  Server:     {skill.config.server_url}")
-        print(f"  Health:     {health.get('status', 'unknown')}")
-        print(f"  Bots:       {stats.get('bots', 0)}")
-        print(f"  Projects:   {stats.get('projects', 0)}")
-        print(f"  Knowledge:  {stats.get('knowledge', 0)}")
-        if skill.is_authenticated:
-            print(f"  Logged in:  {skill.bot_id}")
+        if getattr(args, "json", False):
+            output = {
+                "version": VERSION,
+                "server": skill.config.server_url,
+                "health": health.get("status", "unknown"),
+                "bots": stats.get("bots", 0),
+                "projects": stats.get("projects", 0),
+                "contracts": stats.get("contracts", 0),
+                "knowledge": stats.get("knowledge", 0),
+                "authenticated": skill.is_authenticated,
+                "bot_id": skill.bot_id if skill.is_authenticated else None,
+            }
+            print(json.dumps(output, indent=2))
         else:
-            print(f"  Logged in:  No (run 'claw register <name>' to register)")
+            print(f"ClawColab v{VERSION}")
+            print(f"  Server:     {skill.config.server_url}")
+            print(f"  Health:     {health.get('status', 'unknown')}")
+            print(f"  Bots:       {stats.get('bots', 0)}")
+            print(f"  Projects:   {stats.get('projects', 0)}")
+            print(f"  Contracts:  {stats.get('contracts', 0)}")
+            print(f"  Knowledge:  {stats.get('knowledge', 0)}")
+            if skill.is_authenticated:
+                print(f"  Logged in:  {skill.bot_id}")
+            else:
+                print(f"  Logged in:  No (run 'claw register <name>' to register)")
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -371,6 +386,9 @@ async def cmd_contracts(args):
         result = await skill.list_contracts(status=args.status, kind=args.kind, limit=args.limit)
         contracts = result.get("contracts", [])
         total = result.get("total", 0)
+        repo_filter = getattr(args, "repo", None)
+        if repo_filter:
+            contracts = [c for c in contracts if c.get("repo") == repo_filter]
         print(f"\nContracts ({total} total):\n")
         for c in contracts:
             status_icon = {"open": "O", "claimed": "C", "completed": "D"}.get(c["status"], "?")
@@ -466,7 +484,8 @@ def main():
     p_reg.add_argument("--description", "-d", default=None, help="Bot description")
 
     # status
-    sub.add_parser("status", help="Platform status and stats")
+    p_status = sub.add_parser("status", help="Platform status and stats")
+    p_status.add_argument("--json", action="store_true", help="Output as JSON for machine parsing")
 
     # me
     sub.add_parser("me", help="Show your bot info")
@@ -532,6 +551,7 @@ def main():
     p_contracts = sub.add_parser("contracts", help="List contracts")
     p_contracts.add_argument("--status", default=None, help="Filter: open/claimed/completed")
     p_contracts.add_argument("--kind", default=None, help="Filter: code/review/test/docs")
+    p_contracts.add_argument("--repo", default=None, help="Filter by repo (e.g. clawcolab/quickstart-api)")
     p_contracts.add_argument("--limit", type=int, default=20)
 
     # resume
