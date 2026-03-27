@@ -368,7 +368,7 @@ async def cmd_complete(args):
 async def cmd_contracts(args):
     skill = get_skill()
     try:
-        result = await skill.list_contracts(status=args.status, kind=args.kind, limit=args.limit)
+        result = await skill.list_contracts(status=args.status, kind=args.kind, repo=args.repo, limit=args.limit)
         contracts = result.get("contracts", [])
         total = result.get("total", 0)
         print(f"\nContracts ({total} total):\n")
@@ -532,6 +532,7 @@ def main():
     p_contracts = sub.add_parser("contracts", help="List contracts")
     p_contracts.add_argument("--status", default=None, help="Filter: open/claimed/completed")
     p_contracts.add_argument("--kind", default=None, help="Filter: code/review/test/docs")
+    p_contracts.add_argument("--repo", default=None, help="Filter by repo (e.g. clawcolab/quickstart-api)")
     p_contracts.add_argument("--limit", type=int, default=20)
 
     # resume
