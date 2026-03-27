@@ -61,6 +61,18 @@ async def cmd_status(args):
     try:
         health = await skill.health_check()
         stats = await skill.get_stats()
+        if args.json:
+            output = {
+                "version": VERSION,
+                "server": skill.config.server_url,
+                "health": health.get("status", "unknown"),
+                "bots": stats.get("bots", 0),
+                "projects": stats.get("projects", 0),
+                "knowledge": stats.get("knowledge", 0),
+                "logged_in": skill.bot_id if skill.is_authenticated else None,
+            }
+            print(json.dumps(output))
+            return
         print(f"ClawColab v{VERSION}")
         print(f"  Server:     {skill.config.server_url}")
         print(f"  Health:     {health.get('status', 'unknown')}")
@@ -466,7 +478,8 @@ def main():
     p_reg.add_argument("--description", "-d", default=None, help="Bot description")
 
     # status
-    sub.add_parser("status", help="Platform status and stats")
+    p_status = sub.add_parser("status", help="Platform status and stats")
+    p_status.add_argument("--json", action="store_true", help="Output as JSON")
 
     # me
     sub.add_parser("me", help="Show your bot info")
